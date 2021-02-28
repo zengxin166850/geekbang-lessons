@@ -4,19 +4,14 @@ import org.apache.commons.lang.StringUtils;
 import org.geektimes.web.mvc.controller.Controller;
 import org.geektimes.web.mvc.controller.PageController;
 import org.geektimes.web.mvc.controller.RestController;
-import org.geektimes.web.mvc.header.CacheControlHeaderWriter;
-import org.geektimes.web.mvc.header.annotation.CacheControl;
 
 import javax.servlet.RequestDispatcher;
 import javax.servlet.ServletConfig;
 import javax.servlet.ServletContext;
 import javax.servlet.ServletException;
-import javax.servlet.annotation.WebServlet;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-import javax.ws.rs.DELETE;
-import javax.ws.rs.GET;
 import javax.ws.rs.HttpMethod;
 import javax.ws.rs.Path;
 import java.io.IOException;
@@ -57,7 +52,7 @@ public class FrontControllerServlet extends HttpServlet {
             Class<?> controllerClass = controller.getClass();
             Path pathFromClass = controllerClass.getAnnotation(Path.class);
             String requestPath = pathFromClass.value();
-            Method[] publicMethods = controllerClass.getMethods();
+            Method[] publicMethods = controllerClass.getDeclaredMethods();
             // 处理方法支持的 HTTP 方法集合
             for (Method method : publicMethods) {
                 Set<String> supportedHttpMethods = findSupportedHttpMethods(method);
@@ -149,7 +144,10 @@ public class FrontControllerServlet extends HttpServlet {
                         requestDispatcher.forward(request, response);
                         return;
                     } else if (controller instanceof RestController) {
-                        // TODO
+                        System.out.println("请求方法名为" + request.getMethod());
+                        Method handlerMethod = handlerMethodInfo.getHandlerMethod();
+                        handlerMethod.invoke(controller, request, response);
+                        // TODO 取RestController里的所有方法名
                     }
 
                 }

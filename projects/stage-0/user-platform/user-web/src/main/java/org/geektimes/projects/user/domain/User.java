@@ -82,4 +82,15 @@ public class User {
                 ", phoneNumber='" + phoneNumber + '\'' +
                 '}';
     }
+
+    public User() {
+    }
+
+    public User(Long id, String name, String password, String email, String phoneNumber) {
+        this.id = id;
+        this.name = name;
+        this.password = password;
+        this.email = email;
+        this.phoneNumber = phoneNumber;
+    }
 }
