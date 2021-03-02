@@ -1,5 +1,6 @@
 package org.geektimes.projects.user.web.controller;
 
+import org.geektimes.web.mvc.annotation.Controller;
 import org.geektimes.web.mvc.controller.PageController;
 
 import javax.servlet.http.HttpServletRequest;
@@ -12,6 +13,7 @@ import javax.ws.rs.Path;
  * 输出 “Hello,World” Controller
  */
 @Path("/hello")
+@Controller
 public class HelloWorldController implements PageController {
 
     @GET

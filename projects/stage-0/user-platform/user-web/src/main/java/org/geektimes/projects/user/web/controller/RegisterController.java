@@ -1,5 +1,6 @@
 package org.geektimes.projects.user.web.controller;
 
+import org.geektimes.web.mvc.annotation.Controller;
 import org.geektimes.web.mvc.controller.PageController;
 
 import javax.servlet.http.HttpServletRequest;
@@ -8,6 +9,7 @@ import javax.ws.rs.GET;
 import javax.ws.rs.Path;
 
 @Path("")
+@Controller
 public class RegisterController implements PageController {
 
     @GET

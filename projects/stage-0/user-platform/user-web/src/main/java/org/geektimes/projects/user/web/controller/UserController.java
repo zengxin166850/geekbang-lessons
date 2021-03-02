@@ -1,11 +1,10 @@
 package org.geektimes.projects.user.web.controller;
 
 import org.geektimes.projects.user.domain.User;
-import org.geektimes.projects.user.service.UserService;
 import org.geektimes.projects.user.service.UserServiceImpl;
-import org.geektimes.web.mvc.annotation.Component;
-import org.geektimes.web.mvc.controller.RestController;
 import org.geektimes.web.mvc.annotation.Autowired;
+import org.geektimes.web.mvc.annotation.Controller;
+import org.geektimes.web.mvc.controller.RestController;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -14,10 +13,10 @@ import javax.ws.rs.Path;
 import java.io.IOException;
 
 @Path("")
-@Component
+@Controller
 public class UserController implements RestController {
     @Autowired
-    UserService service;
+    UserServiceImpl service;
 
     @POST
     @Path("/signInSuccess")
@@ -28,7 +27,7 @@ public class UserController implements RestController {
         String email = request.getParameter("email");
         String phoneNumber = request.getParameter("phoneNumber");
         User user = new User(System.currentTimeMillis(), name, password, email, phoneNumber);
-        UserService service = new UserServiceImpl();
+//        UserService service = new UserServiceImpl();
         //注册
         boolean register = service.register(user);
         response.setCharacterEncoding("UTF-8");

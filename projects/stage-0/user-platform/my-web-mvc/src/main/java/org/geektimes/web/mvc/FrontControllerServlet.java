@@ -3,12 +3,11 @@ package org.geektimes.web.mvc;
 import org.apache.commons.lang.StringUtils;
 import org.geektimes.web.mvc.annotation.Autowired;
 import org.geektimes.web.mvc.annotation.Component;
+import org.geektimes.web.mvc.annotation.Service;
 import org.geektimes.web.mvc.controller.Controller;
 import org.geektimes.web.mvc.controller.PageController;
 import org.geektimes.web.mvc.controller.RestController;
-import org.geektimes.web.mvc.util.ScanClassUtil;
 
-import javax.annotation.PostConstruct;
 import javax.servlet.RequestDispatcher;
 import javax.servlet.ServletConfig;
 import javax.servlet.ServletContext;
@@ -18,11 +17,16 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.ws.rs.HttpMethod;
 import javax.ws.rs.Path;
+import java.io.File;
 import java.io.IOException;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.net.URISyntaxException;
+import java.net.URL;
 import java.util.*;
+import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
 
 import static java.util.Arrays.asList;
 import static org.apache.commons.lang.StringUtils.substringAfter;
@@ -39,7 +43,7 @@ public class FrontControllerServlet extends HttpServlet {
      */
     private Map<String, HandlerMethodInfo> handleMethodInfoMapping = new HashMap<>();
     /**
-     * 请求路径和 {@link HandlerMethodInfo} 映射关系缓存
+     * 类与实例的映射关系缓存
      */
     private Map<Class<?>, Object> classInstanceMapping = new HashMap<>();
 
@@ -49,7 +53,15 @@ public class FrontControllerServlet extends HttpServlet {
      * @param servletConfig
      */
     public void init(ServletConfig servletConfig) {
-        initHandleMethods();
+        try {
+            initialInstance();
+            autowire();
+            initHandleMethods();
+        } catch (InstantiationException e) {
+            e.printStackTrace();
+        } catch (IllegalAccessException e) {
+            e.printStackTrace();
+        }
     }
 
     /**
@@ -57,22 +69,24 @@ public class FrontControllerServlet extends HttpServlet {
      * 利用 ServiceLoader 技术（Java SPI）
      */
     private void initHandleMethods() {
-        for (Controller controller : ServiceLoader.load(Controller.class)) {
-            Class<?> controllerClass = controller.getClass();
-            Path pathFromClass = controllerClass.getAnnotation(Path.class);
-            String requestPath = pathFromClass.value();
-            Method[] publicMethods = controllerClass.getDeclaredMethods();
-            // 处理方法支持的 HTTP 方法集合
-            for (Method method : publicMethods) {
-                Set<String> supportedHttpMethods = findSupportedHttpMethods(method);
-                Path pathFromMethod = method.getAnnotation(Path.class);
-                if (pathFromMethod != null) {
-                    requestPath += pathFromMethod.value();
+        for (Map.Entry<Class<?>, Object> entry : classInstanceMapping.entrySet()) {
+            Class<?> controllerClass = entry.getKey();
+            if(controllerClass.isAnnotationPresent(org.geektimes.web.mvc.annotation.Controller.class)){
+                Path pathFromClass = controllerClass.getAnnotation(Path.class);
+                String requestPath = pathFromClass.value();
+                Method[] publicMethods = controllerClass.getDeclaredMethods();
+                // 处理方法支持的 HTTP 方法集合
+                for (Method method : publicMethods) {
+                    Set<String> supportedHttpMethods = findSupportedHttpMethods(method);
+                    Path pathFromMethod = method.getAnnotation(Path.class);
+                    if (pathFromMethod != null) {
+                        requestPath += pathFromMethod.value();
+                    }
+                    handleMethodInfoMapping.put(requestPath,
+                            new HandlerMethodInfo(requestPath, method, supportedHttpMethods));
                 }
-                handleMethodInfoMapping.put(requestPath,
-                        new HandlerMethodInfo(requestPath, method, supportedHttpMethods));
+                controllersMapping.put(requestPath, (Controller) entry.getValue());
             }
-            controllersMapping.put(requestPath, controller);
         }
     }
 
@@ -170,7 +184,7 @@ public class FrontControllerServlet extends HttpServlet {
         }
     }
 
-//    private void beforeInvoke(Method handleMethod, HttpServletRequest request, HttpServletResponse response) {
+    //    private void beforeInvoke(Method handleMethod, HttpServletRequest request, HttpServletResponse response) {
 //
 //        CacheControl cacheControl = handleMethod.getAnnotation(CacheControl.class);
 //
@@ -181,32 +195,97 @@ public class FrontControllerServlet extends HttpServlet {
 //            writer.write(headers, cacheControl.value());
 //        }
 //    }
-    @PostConstruct
-    public void scan() throws InstantiationException, IllegalAccessException {
-        List<Class<?>> classes = ScanClassUtil.scanPackage("org.geektimes");
+    //初始化实例
+    public void initialInstance() throws InstantiationException, IllegalAccessException {
+
+        List<Class<?>> classes = scanPackage("org.geektimes",new ArrayList<>());
+//        List<Class<?>> classes = scanPackage("WEB-INF/classes");
         //扫描类
-        for(Class clz:classes){
-            Annotation[] componentClass = clz.getAnnotationsByType(Component.class);
-            if(componentClass.length!=0){
-                Object obj = clz.newInstance();
-                classInstanceMapping.put(clz,obj);
-            }
-        }
-        //注入实例
-        for(Class clz:classes){
-            Field[] fields = clz.getDeclaredFields();
-            for(Field field: fields){
-                Autowired[] autowireds = field.getAnnotationsByType(Autowired.class);
-                if(autowireds.length!=0){
-                    //获取字段类型，从映射中取出实例
-                    Object fieldValue = classInstanceMapping.get(field.getType());
-                    //取当前类的实例
-                    Object classInstance = classInstanceMapping.get(clz);
-                    if(object!=null){
-                        field.set(object,);
-                    }
+        for (Class<?> clz : classes) {
+            if (clz.isAnnotationPresent(Component.class) || clz.isAnnotationPresent(Service.class)
+                    || clz.isAnnotationPresent(org.geektimes.web.mvc.annotation.Controller.class)) {
+                if(!clz.isInterface()&&!clz.isAnnotation()){
+                    Object obj = clz.newInstance();
+                    classInstanceMapping.put(clz, obj);
                 }
             }
         }
     }
+
+    //依赖注入
+    public void autowire() throws IllegalAccessException {
+        //注入实例
+        for (Map.Entry<Class<?>, Object> entry : classInstanceMapping.entrySet()) {
+            Class<?> initialedClass = entry.getKey();
+            Field[] declaredFields = initialedClass.getDeclaredFields();
+            for (Field field : declaredFields) {
+                if (field.isAnnotationPresent(Autowired.class)) {
+                    Object instance = entry.getValue();
+                    field.setAccessible(true);
+                    Class<?> fieldType = field.getType();
+                    field.set(instance, classInstanceMapping.get(fieldType));
+                }
+            }
+        }
+    }
+
+    public static List<Class<?>> scanPackage(String packageName,List<Class<?>> classes) {
+        File directory = null;
+        String fullPath;
+        String relPath = packageName.replace('.', '/');
+        ClassLoader cl = FrontControllerServlet.class.getClassLoader();
+        URL resource = cl != null ? cl.getResource(relPath) : ClassLoader.getSystemClassLoader().getResource(relPath);
+        if (resource == null) {
+            throw new RuntimeException("No resource for " + relPath);
+        }
+        fullPath = resource.getFile();
+
+        try {
+            directory = new File(resource.toURI());
+        } catch (URISyntaxException e) {
+            throw new RuntimeException(packageName + " (" + resource + ") does not appear to be a valid URL / URI.  Strange, since we got it from the system...", e);
+        } catch (IllegalArgumentException e) {
+            directory = null;
+        }
+        if (directory != null && directory.exists()) {
+            // Get the list of the files contained in the package
+            File[] files = directory.listFiles();
+            for (int i = 0; i < files.length; i++) {
+                // we are only interested in .class files
+                if(files[i].isDirectory()){
+                    scanPackage(packageName + "." + files[i].getName(),classes);
+                }else  if (files[i].getName().endsWith(".class")) {
+                    // removes the .class extension
+                    String className = packageName + '.' + files[i].getName().substring(0, files[i].getName().length() - 6);
+                    try {
+                        classes.add(Class.forName(className));
+                    } catch (ClassNotFoundException e) {
+                        throw new RuntimeException("ClassNotFoundException loading " + className);
+                    }
+                }
+            }
+        } else {
+            try {
+                String jarPath = fullPath.replaceFirst("[.]jar[!].*", ".jar").replaceFirst("file:", "");
+                JarFile jarFile = new JarFile(jarPath);
+                Enumeration<JarEntry> entries = jarFile.entries();
+                while (entries.hasMoreElements()) {
+                    JarEntry entry = entries.nextElement();
+                    String entryName = entry.getName();
+                    if (entryName.startsWith(relPath) && entryName.length() > (relPath.length() + "/".length())) {
+                        String className = entryName.replace('/', '.').replace('\\', '.').replace(".class", "");
+                        try {
+                            classes.add(Class.forName(className));
+                        } catch (ClassNotFoundException e) {
+                            throw new RuntimeException("ClassNotFoundException loading " + className);
+                        }
+                    }
+                }
+            } catch (IOException e) {
+                throw new RuntimeException(packageName + " (" + directory + ") does not appear to be a valid package", e);
+            }
+        }
+        return classes;
+    }
+
 }
