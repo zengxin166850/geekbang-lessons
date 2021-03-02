@@ -1,10 +1,14 @@
 package org.geektimes.web.mvc;
 
 import org.apache.commons.lang.StringUtils;
+import org.geektimes.web.mvc.annotation.Autowired;
+import org.geektimes.web.mvc.annotation.Component;
 import org.geektimes.web.mvc.controller.Controller;
 import org.geektimes.web.mvc.controller.PageController;
 import org.geektimes.web.mvc.controller.RestController;
+import org.geektimes.web.mvc.util.ScanClassUtil;
 
+import javax.annotation.PostConstruct;
 import javax.servlet.RequestDispatcher;
 import javax.servlet.ServletConfig;
 import javax.servlet.ServletContext;
@@ -16,6 +20,7 @@ import javax.ws.rs.HttpMethod;
 import javax.ws.rs.Path;
 import java.io.IOException;
 import java.lang.annotation.Annotation;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.*;
 
@@ -33,6 +38,10 @@ public class FrontControllerServlet extends HttpServlet {
      * 请求路径和 {@link HandlerMethodInfo} 映射关系缓存
      */
     private Map<String, HandlerMethodInfo> handleMethodInfoMapping = new HashMap<>();
+    /**
+     * 请求路径和 {@link HandlerMethodInfo} 映射关系缓存
+     */
+    private Map<Class<?>, Object> classInstanceMapping = new HashMap<>();
 
     /**
      * 初始化 Servlet
@@ -172,4 +181,32 @@ public class FrontControllerServlet extends HttpServlet {
 //            writer.write(headers, cacheControl.value());
 //        }
 //    }
+    @PostConstruct
+    public void scan() throws InstantiationException, IllegalAccessException {
+        List<Class<?>> classes = ScanClassUtil.scanPackage("org.geektimes");
+        //扫描类
+        for(Class clz:classes){
+            Annotation[] componentClass = clz.getAnnotationsByType(Component.class);
+            if(componentClass.length!=0){
+                Object obj = clz.newInstance();
+                classInstanceMapping.put(clz,obj);
+            }
+        }
+        //注入实例
+        for(Class clz:classes){
+            Field[] fields = clz.getDeclaredFields();
+            for(Field field: fields){
+                Autowired[] autowireds = field.getAnnotationsByType(Autowired.class);
+                if(autowireds.length!=0){
+                    //获取字段类型，从映射中取出实例
+                    Object fieldValue = classInstanceMapping.get(field.getType());
+                    //取当前类的实例
+                    Object classInstance = classInstanceMapping.get(clz);
+                    if(object!=null){
+                        field.set(object,);
+                    }
+                }
+            }
+        }
+    }
 }

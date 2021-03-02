@@ -1,6 +1,7 @@
 package org.geektimes.projects.user.repository;
 
 import org.geektimes.projects.user.domain.User;
+import org.geektimes.web.mvc.annotation.Component;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -10,6 +11,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * @since 1.0s
  */
+@Component
 public class InMemoryUserRepository implements UserRepository {
 
     private Map<Long, User> repository = new ConcurrentHashMap<>();
