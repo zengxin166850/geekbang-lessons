@@ -1,3 +1,4 @@
+<%@ page import="org.geektimes.projects.user.JNDITest" %>
 <head>
     <jsp:directive.include
             file="/WEB-INF/jsp/prelude/include-head-meta.jspf"/>
@@ -5,6 +6,10 @@
 </head>
 <body>
 <h2>新用户注册</h2>
+<%
+    JNDITest test = new JNDITest();
+    test.getDatasource();
+%>
 <form action=<%=request.getContextPath()+"/signInSuccess"%> method="post">
     <table align="center">
         <tr align="right">

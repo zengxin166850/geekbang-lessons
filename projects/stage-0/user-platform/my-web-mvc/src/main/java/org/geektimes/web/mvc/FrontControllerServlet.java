@@ -25,8 +25,6 @@ import java.lang.reflect.Method;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.util.*;
-import java.util.jar.JarEntry;
-import java.util.jar.JarFile;
 
 import static java.util.Arrays.asList;
 import static org.apache.commons.lang.StringUtils.substringAfter;
@@ -43,15 +41,16 @@ public class FrontControllerServlet extends HttpServlet {
      */
     private Map<String, HandlerMethodInfo> handleMethodInfoMapping = new HashMap<>();
     /**
-     * 类与实例的映射关系缓存
+     * beanName与实例的映射关系缓存
      */
-    private Map<Class<?>, Object> classInstanceMapping = new HashMap<>();
+    private Map<String, Object> beanNameInstanceMapping = new HashMap<>();
 
     /**
      * 初始化 Servlet
      *
      * @param servletConfig
      */
+    @Override
     public void init(ServletConfig servletConfig) {
         try {
             initialInstance();
@@ -69,9 +68,9 @@ public class FrontControllerServlet extends HttpServlet {
      * 利用 ServiceLoader 技术（Java SPI）
      */
     private void initHandleMethods() {
-        for (Map.Entry<Class<?>, Object> entry : classInstanceMapping.entrySet()) {
-            Class<?> controllerClass = entry.getKey();
-            if(controllerClass.isAnnotationPresent(org.geektimes.web.mvc.annotation.Controller.class)){
+        for (Map.Entry<String, Object> entry : beanNameInstanceMapping.entrySet()) {
+            Class<?> controllerClass = entry.getValue().getClass();
+            if (controllerClass.isAnnotationPresent(org.geektimes.web.mvc.annotation.Controller.class)) {
                 Path pathFromClass = controllerClass.getAnnotation(Path.class);
                 String requestPath = pathFromClass.value();
                 Method[] publicMethods = controllerClass.getDeclaredMethods();
@@ -83,7 +82,7 @@ public class FrontControllerServlet extends HttpServlet {
                         requestPath += pathFromMethod.value();
                     }
                     handleMethodInfoMapping.put(requestPath,
-                            new HandlerMethodInfo(requestPath, method, supportedHttpMethods));
+                        new HandlerMethodInfo(requestPath, method, supportedHttpMethods));
                 }
                 controllersMapping.put(requestPath, (Controller) entry.getValue());
             }
@@ -107,7 +106,7 @@ public class FrontControllerServlet extends HttpServlet {
 
         if (supportedHttpMethods.isEmpty()) {
             supportedHttpMethods.addAll(asList(HttpMethod.GET, HttpMethod.POST,
-                    HttpMethod.PUT, HttpMethod.DELETE, HttpMethod.HEAD, HttpMethod.OPTIONS));
+                HttpMethod.PUT, HttpMethod.DELETE, HttpMethod.HEAD, HttpMethod.OPTIONS));
         }
 
         return supportedHttpMethods;
@@ -123,7 +122,7 @@ public class FrontControllerServlet extends HttpServlet {
      */
     @Override
     public void service(HttpServletRequest request, HttpServletResponse response)
-            throws ServletException, IOException {
+        throws ServletException, IOException {
         // 建立映射关系
         // requestURI = /a/hello/world
         String requestURI = request.getRequestURI();
@@ -132,7 +131,7 @@ public class FrontControllerServlet extends HttpServlet {
         String prefixPath = servletContextPath;
         // 映射路径（子路径）
         String requestMappingPath = substringAfter(requestURI,
-                StringUtils.replace(prefixPath, "//", "/"));
+            StringUtils.replace(prefixPath, "//", "/"));
         // 映射到 Controller
         Controller controller = controllersMapping.get(requestMappingPath);
 
@@ -198,82 +197,100 @@ public class FrontControllerServlet extends HttpServlet {
     //初始化实例
     public void initialInstance() throws InstantiationException, IllegalAccessException {
 
-        List<Class<?>> classes = scanPackage("org.geektimes",new ArrayList<>());
-//        List<Class<?>> classes = scanPackage("WEB-INF/classes");
+        List<Class<?>> classes = scanPackage("org.geektimes", new ArrayList<>());
         //扫描类
         for (Class<?> clz : classes) {
-            if (clz.isAnnotationPresent(Component.class) || clz.isAnnotationPresent(Service.class)
-                    || clz.isAnnotationPresent(org.geektimes.web.mvc.annotation.Controller.class)) {
-                if(!clz.isInterface()&&!clz.isAnnotation()){
-                    Object obj = clz.newInstance();
-                    classInstanceMapping.put(clz, obj);
+            //跳过接口
+            if (clz.isInterface()) {
+                continue;
+            }
+            if (clz.isAnnotationPresent(Component.class)) {
+                Component annotation = clz.getAnnotation(Component.class);
+                Object obj = clz.newInstance();
+                //若未设置beanName则使用类名小写
+                if ("".equals(annotation.value())) {
+                    String beanName = clz.getSimpleName().toLowerCase();
+                    beanNameInstanceMapping.put(beanName, obj);
+                } else {
+                    beanNameInstanceMapping.put(annotation.value(), obj);
+                }
+            }
+            if (clz.isAnnotationPresent(Service.class)) {
+                Service annotation = clz.getAnnotation(Service.class);
+                Object obj = clz.newInstance();
+                if ("".equals(annotation.value())) {
+                    String beanName = clz.getSimpleName().toLowerCase();
+                    beanNameInstanceMapping.put(beanName, obj);
+                } else {
+                    beanNameInstanceMapping.put(annotation.value(), obj);
+                }
+            }
+            if (clz.isAnnotationPresent(org.geektimes.web.mvc.annotation.Controller.class)) {
+                org.geektimes.web.mvc.annotation.Controller annotation = clz.getAnnotation(
+                    org.geektimes.web.mvc.annotation.Controller.class);
+                Object obj = clz.newInstance();
+                if ("".equals(annotation.value())) {
+                    String beanName = clz.getSimpleName().toLowerCase();
+                    beanNameInstanceMapping.put(beanName, obj);
+                } else {
+                    beanNameInstanceMapping.put(annotation.value(), obj);
                 }
             }
         }
     }
+
 
     //依赖注入
     public void autowire() throws IllegalAccessException {
         //注入实例
-        for (Map.Entry<Class<?>, Object> entry : classInstanceMapping.entrySet()) {
-            Class<?> initialedClass = entry.getKey();
-            Field[] declaredFields = initialedClass.getDeclaredFields();
+        for (Map.Entry<String, Object> entry : beanNameInstanceMapping.entrySet()) {
+            Object instance = entry.getValue();
+            Field[] declaredFields = instance.getClass().getDeclaredFields();
+
             for (Field field : declaredFields) {
                 if (field.isAnnotationPresent(Autowired.class)) {
-                    Object instance = entry.getValue();
                     field.setAccessible(true);
-                    Class<?> fieldType = field.getType();
-                    field.set(instance, classInstanceMapping.get(fieldType));
+                    String autowireBeanName = field.getAnnotation(Autowired.class).value();
+                    if ("".equals(autowireBeanName)) {
+                        String beanName = field.getType().getSimpleName().toLowerCase();
+                        field.set(instance, getBean(beanName));
+                    } else {
+                        field.set(instance, getBean(autowireBeanName));
+                    }
                 }
             }
         }
     }
 
-    public static List<Class<?>> scanPackage(String packageName,List<Class<?>> classes) {
+    private Object getBean(String beanName) {
+        Object res = beanNameInstanceMapping.get(beanName);
+        if (res == null) {
+            throw new RuntimeException("autowire failed, Can not find bean for name " + beanName);
+        }
+        return res;
+
+    }
+
+    public List<Class<?>> scanPackage(String packageName, List<Class<?>> classes) {
         File directory = null;
-        String fullPath;
         String relPath = packageName.replace('.', '/');
-        ClassLoader cl = FrontControllerServlet.class.getClassLoader();
-        URL resource = cl != null ? cl.getResource(relPath) : ClassLoader.getSystemClassLoader().getResource(relPath);
+        URL resource = this.getClass().getClassLoader().getResource(relPath);
+
         if (resource == null) {
             throw new RuntimeException("No resource for " + relPath);
         }
-        fullPath = resource.getFile();
 
         try {
             directory = new File(resource.toURI());
-        } catch (URISyntaxException e) {
-            throw new RuntimeException(packageName + " (" + resource + ") does not appear to be a valid URL / URI.  Strange, since we got it from the system...", e);
-        } catch (IllegalArgumentException e) {
-            directory = null;
-        }
-        if (directory != null && directory.exists()) {
-            // Get the list of the files contained in the package
-            File[] files = directory.listFiles();
-            for (int i = 0; i < files.length; i++) {
-                // we are only interested in .class files
-                if(files[i].isDirectory()){
-                    scanPackage(packageName + "." + files[i].getName(),classes);
-                }else  if (files[i].getName().endsWith(".class")) {
-                    // removes the .class extension
-                    String className = packageName + '.' + files[i].getName().substring(0, files[i].getName().length() - 6);
-                    try {
-                        classes.add(Class.forName(className));
-                    } catch (ClassNotFoundException e) {
-                        throw new RuntimeException("ClassNotFoundException loading " + className);
-                    }
-                }
-            }
-        } else {
-            try {
-                String jarPath = fullPath.replaceFirst("[.]jar[!].*", ".jar").replaceFirst("file:", "");
-                JarFile jarFile = new JarFile(jarPath);
-                Enumeration<JarEntry> entries = jarFile.entries();
-                while (entries.hasMoreElements()) {
-                    JarEntry entry = entries.nextElement();
-                    String entryName = entry.getName();
-                    if (entryName.startsWith(relPath) && entryName.length() > (relPath.length() + "/".length())) {
-                        String className = entryName.replace('/', '.').replace('\\', '.').replace(".class", "");
+            if (directory != null && directory.exists()) {
+                // 获取所有文件
+                File[] files = directory.listFiles();
+                for (int i = 0; i < files.length; i++) {
+                    // 文件夹递归
+                    if (files[i].isDirectory()) {
+                        scanPackage(packageName + "." + files[i].getName(), classes);
+                    } else if (files[i].getName().endsWith(".class")) {
+                        String className = packageName + '.' + files[i].getName().substring(0, files[i].getName().length() - 6);
                         try {
                             classes.add(Class.forName(className));
                         } catch (ClassNotFoundException e) {
@@ -281,10 +298,11 @@ public class FrontControllerServlet extends HttpServlet {
                         }
                     }
                 }
-            } catch (IOException e) {
-                throw new RuntimeException(packageName + " (" + directory + ") does not appear to be a valid package", e);
             }
+        } catch (URISyntaxException e) {
+            throw new RuntimeException(packageName + " (" + resource + ") does not appear to be a valid URL / URI...", e);
         }
+
         return classes;
     }
 
